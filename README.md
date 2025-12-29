@@ -81,47 +81,6 @@ ray-k3s-deployment/
 └── vram-inventory.md                   # Per-node VRAM breakdown
 ```
 
-## Quick Start
-
-### Prerequisites
-
-- k3s cluster running
-- kubectl configured with kubeconfig
-- Helm 3.x installed
-- MetalLB configured (LoadBalancer IP pool)
-- NVIDIA drivers installed on GPU nodes
-- NVIDIA device plugin deployed (or deploy via this repo)
-
-### Deployment Steps
-
-1. **Deploy NVIDIA Device Plugin** (if not already present)
-   ```bash
-   kubectl apply -f manifests/nvidia-device-plugin.yaml
-   ```
-
-2. **Install KubeRay Operator**
-   ```bash
-   cd helm
-   ./install-operator.sh
-   ```
-
-3. **Deploy RayCluster**
-   ```bash
-   kubectl apply -f manifests/raycluster.yaml
-   ```
-
-4. **Create LoadBalancer Service**
-   ```bash
-   kubectl apply -f manifests/ray-loadbalancer.yaml
-   ```
-
-5. **Get LoadBalancer IP**
-   ```bash
-   kubectl get svc ray-cluster-loadbalancer -n ray-system
-   ```
-
-See [docs/deployment-steps.md](docs/deployment-steps.md) for detailed instructions.
-
 ## Usage
 
 ### Submit Job via REST API
@@ -138,8 +97,6 @@ response = requests.post(
 )
 job_id = response.json()["job_id"]
 ```
-
-See [docs/rest-api-submission.md](docs/rest-api-submission.md) for complete API reference.
 
 ### Deploy vLLM Model
 
@@ -161,8 +118,6 @@ class vLLMModel:
 
 serve.run(vLLMModel.bind("microsoft/phi-2"), name="phi2")
 ```
-
-See [docs/vllm-deployment.md](docs/vllm-deployment.md) for details.
 
 ## How It Works
 
@@ -217,57 +172,7 @@ resources:
 - **Prometheus Metrics**: `/metrics` endpoint
 - **Grafana Dashboard**: See `monitoring/grafana-dashboard.json`
 
-## Documentation
-
-- [Deployment Steps](docs/deployment-steps.md) - Complete step-by-step guide
-- [REST API Reference](docs/rest-api-submission.md) - Job submission API
-- [vLLM Deployment](docs/vllm-deployment.md) - Model serving guide
-- [Resource Limits](resource-limits.md) - Hardware specifications
-- [VRAM Inventory](vram-inventory.md) - Per-node VRAM breakdown
-
-## Troubleshooting
-
-### GPUs Not Visible
-```bash
-# Check device plugin
-kubectl get pods -n kube-system | grep nvidia-device-plugin
-
-# Verify GPU resources
-kubectl describe node <gpu-node> | grep nvidia.com/gpu
-```
-
-### Ray Workers Not Starting
-```bash
-# Check pod events
-kubectl describe pod <worker-pod> -n ray-system
-
-# Check logs
-kubectl logs <worker-pod> -n ray-system
-```
-
-### LoadBalancer IP Not Assigned
-```bash
-# Check MetalLB
-kubectl get pods -n metallb-system
-
-# Check service
-kubectl describe svc ray-cluster-loadbalancer -n ray-system
-```
-
-## Dependencies
-
-- **KubeRay Operator**: v1.x
-- **Ray**: 2.21.0+
-- **NVIDIA Device Plugin**: v0.14.1+
-- **vLLM**: Latest
-- **Helm**: v3.x
-- **MetalLB**: Already configured in cluster
-
-## License
-
-[Your License Here]
-
 ## Related Repositories
 
-- [rayify](https://github.com/yourusername/rayify) - Ray script conversion tool
+- [rayify](https://github.com/BasicOverflow/rayify) - Ray script conversion tool
 
