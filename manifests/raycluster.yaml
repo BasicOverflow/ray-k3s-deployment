@@ -138,6 +138,7 @@ spec:
     rayStartParams:
       num-cpus: "12"  # Explicitly set to match ergos-02-nv CPU count
       num-gpus: "3"  # All 3 GPUs on ergos-02-nv
+      resources: '"{\"ergos-02-nv_gpu0\": 100, \"ergos-02-nv_gpu1\": 100, \"ergos-02-nv_gpu2\": 100}"'  # Custom resources per GPU for placement control (high value allows multiple replicas)
     template:
       spec:
         affinity:
@@ -175,9 +176,42 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
           - |
-            pip install --no-cache-dir -t /vllm-install vllm
-            echo "vllm installed to /vllm-install"
-            ls -la /vllm-install/ | head -10
+            set -e  # Exit on any error
+            echo "Installing vllm to /vllm-install..."
+            # Install vllm - pip -t creates lib/python3.12/site-packages structure
+            pip install --no-cache-dir -t /vllm-install vllm || {
+              echo "ERROR: vllm installation failed!"
+              exit 1
+            }
+            echo "vllm installed successfully"
+            echo "Verifying installation structure..."
+            # Find where vllm was actually installed
+            VLLM_PATH=$(find /vllm-install -type d -name "vllm" | head -1)
+            if [ -z "$VLLM_PATH" ]; then
+              echo "ERROR: vllm directory not found!"
+              echo "Contents of /vllm-install:"
+              ls -la /vllm-install/
+              find /vllm-install -type f -name "__init__.py" | head -5
+              exit 1
+            fi
+            echo "Found vllm at: $VLLM_PATH"
+            # Ensure vllm is directly importable from /vllm-install
+            # Create symlink if it's in site-packages but not at root
+            if [[ "$VLLM_PATH" == *"site-packages"* ]] && [ ! -d "/vllm-install/vllm" ]; then
+              echo "Creating symlink for direct import..."
+              ln -s "$VLLM_PATH" /vllm-install/vllm
+            fi
+            # Verify vllm can be imported
+            echo "Testing vllm import..."
+            export PYTHONPATH="/vllm-install:/vllm-install/lib/python3.12/site-packages:$PYTHONPATH"
+            python3 -c "import vllm; print(f'vllm imported successfully from {vllm.__file__}')" || {
+              echo "ERROR: vllm cannot be imported!"
+              echo "PYTHONPATH: $PYTHONPATH"
+              echo "Python sys.path test:"
+              python3 -c "import sys; print('\n'.join(sys.path))"
+              exit 1
+            }
+            echo "vllm installation verified successfully"
           volumeMounts:
           - name: vllm-install
             mountPath: /vllm-install
@@ -225,6 +259,11 @@ spec:
             value: "1"
           - name: NCCL_IB_DISABLE
             value: "1"
+          # Shared Hugging Face cache to avoid re-downloading models
+          - name: HF_HOME
+            value: "/vllm-install/.cache/huggingface"
+          - name: TRANSFORMERS_CACHE
+            value: "/vllm-install/.cache/huggingface"
   
   # ergos-04-nv: 13 CPUs, 2 GPUs
   - groupName: gpu-workers-ergos-04-nv
@@ -234,6 +273,7 @@ spec:
     rayStartParams:
       num-cpus: "13"  # Explicitly set to match ergos-04-nv CPU count
       num-gpus: "2"  # All 2 GPUs on ergos-04-nv
+      resources: '"{\"ergos-04-nv_gpu0\": 100, \"ergos-04-nv_gpu1\": 100}"'  # Custom resources per GPU for placement control (high value allows multiple replicas)
     template:
       spec:
         affinity:
@@ -271,8 +311,42 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
           - |
-            pip install --no-cache-dir -t /vllm-install vllm
-            echo "vllm installed to /vllm-install"
+            set -e  # Exit on any error
+            echo "Installing vllm to /vllm-install..."
+            # Install vllm - pip -t creates lib/python3.12/site-packages structure
+            pip install --no-cache-dir -t /vllm-install vllm || {
+              echo "ERROR: vllm installation failed!"
+              exit 1
+            }
+            echo "vllm installed successfully"
+            echo "Verifying installation structure..."
+            # Find where vllm was actually installed
+            VLLM_PATH=$(find /vllm-install -type d -name "vllm" | head -1)
+            if [ -z "$VLLM_PATH" ]; then
+              echo "ERROR: vllm directory not found!"
+              echo "Contents of /vllm-install:"
+              ls -la /vllm-install/
+              find /vllm-install -type f -name "__init__.py" | head -5
+              exit 1
+            fi
+            echo "Found vllm at: $VLLM_PATH"
+            # Ensure vllm is directly importable from /vllm-install
+            # Create symlink if it's in site-packages but not at root
+            if [[ "$VLLM_PATH" == *"site-packages"* ]] && [ ! -d "/vllm-install/vllm" ]; then
+              echo "Creating symlink for direct import..."
+              ln -s "$VLLM_PATH" /vllm-install/vllm
+            fi
+            # Verify vllm can be imported
+            echo "Testing vllm import..."
+            export PYTHONPATH="/vllm-install:/vllm-install/lib/python3.12/site-packages:$PYTHONPATH"
+            python3 -c "import vllm; print(f'vllm imported successfully from {vllm.__file__}')" || {
+              echo "ERROR: vllm cannot be imported!"
+              echo "PYTHONPATH: $PYTHONPATH"
+              echo "Python sys.path test:"
+              python3 -c "import sys; print('\n'.join(sys.path))"
+              exit 1
+            }
+            echo "vllm installation verified successfully"
           volumeMounts:
           - name: vllm-install
             mountPath: /vllm-install
@@ -320,6 +394,11 @@ spec:
             value: "1"
           - name: NCCL_IB_DISABLE
             value: "1"
+          # Shared Hugging Face cache to avoid re-downloading models
+          - name: HF_HOME
+            value: "/vllm-install/.cache/huggingface"
+          - name: TRANSFORMERS_CACHE
+            value: "/vllm-install/.cache/huggingface"
   
   # ergos-06-nv: 5 CPUs, 1 GPU
   - groupName: gpu-workers-ergos-06-nv
@@ -329,6 +408,7 @@ spec:
     rayStartParams:
       num-cpus: "5"  # Explicitly set to match ergos-06-nv CPU count
       num-gpus: "1"  # All 1 GPU on ergos-06-nv
+      resources: '"{\"ergos-06-nv_gpu0\": 100}"'  # Custom resource per GPU for placement control (high value allows multiple replicas)
     template:
       spec:
         affinity:
@@ -366,8 +446,42 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
           - |
-            pip install --no-cache-dir -t /vllm-install vllm
-            echo "vllm installed to /vllm-install"
+            set -e  # Exit on any error
+            echo "Installing vllm to /vllm-install..."
+            # Install vllm - pip -t creates lib/python3.12/site-packages structure
+            pip install --no-cache-dir -t /vllm-install vllm || {
+              echo "ERROR: vllm installation failed!"
+              exit 1
+            }
+            echo "vllm installed successfully"
+            echo "Verifying installation structure..."
+            # Find where vllm was actually installed
+            VLLM_PATH=$(find /vllm-install -type d -name "vllm" | head -1)
+            if [ -z "$VLLM_PATH" ]; then
+              echo "ERROR: vllm directory not found!"
+              echo "Contents of /vllm-install:"
+              ls -la /vllm-install/
+              find /vllm-install -type f -name "__init__.py" | head -5
+              exit 1
+            fi
+            echo "Found vllm at: $VLLM_PATH"
+            # Ensure vllm is directly importable from /vllm-install
+            # Create symlink if it's in site-packages but not at root
+            if [[ "$VLLM_PATH" == *"site-packages"* ]] && [ ! -d "/vllm-install/vllm" ]; then
+              echo "Creating symlink for direct import..."
+              ln -s "$VLLM_PATH" /vllm-install/vllm
+            fi
+            # Verify vllm can be imported
+            echo "Testing vllm import..."
+            export PYTHONPATH="/vllm-install:/vllm-install/lib/python3.12/site-packages:$PYTHONPATH"
+            python3 -c "import vllm; print(f'vllm imported successfully from {vllm.__file__}')" || {
+              echo "ERROR: vllm cannot be imported!"
+              echo "PYTHONPATH: $PYTHONPATH"
+              echo "Python sys.path test:"
+              python3 -c "import sys; print('\n'.join(sys.path))"
+              exit 1
+            }
+            echo "vllm installation verified successfully"
           volumeMounts:
           - name: vllm-install
             mountPath: /vllm-install
@@ -415,6 +529,11 @@ spec:
             value: "1"
           - name: NCCL_IB_DISABLE
             value: "1"
+          # Shared Hugging Face cache to avoid re-downloading models
+          - name: HF_HOME
+            value: "/vllm-install/.cache/huggingface"
+          - name: TRANSFORMERS_CACHE
+            value: "/vllm-install/.cache/huggingface"
         # VRAM monitor sidecar - reports free VRAM as custom resource
         - name: vram-monitor
           image: rayproject/ray:2.53.0-py312-cu125

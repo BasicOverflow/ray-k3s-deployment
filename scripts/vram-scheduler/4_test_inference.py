@@ -1,23 +1,19 @@
 """Test inference on deployed models and load balancing."""
-import ray
 import os
 import sys
 import time
-import warnings
-
-# Suppress Ray Serve internal warnings about network latency
-warnings.filterwarnings("ignore", category=UserWarning, module="ray.serve")
 
 vram_scheduler_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, vram_scheduler_dir)
 
 from ray import serve
+import ray_utils
 
-RAY_ADDRESS = os.getenv("RAY_ADDRESS", "ray://10.0.1.53:10001")
-PROMPT = "What is artificial intelligence?"
-TIMEOUT = 300  # 5 minute timeout for inference
+SUPPRESS_LOGGING = True
 
-ray.init(address=RAY_ADDRESS, ignore_reinit_error=True)
+PROMPT = "Write be a nice long poem about beer."
+
+ray_utils.init_ray(suppress_logging=SUPPRESS_LOGGING)
 
 # Get deployed models
 serve_status = serve.status()
@@ -27,21 +23,25 @@ print(f"Found {len(apps)} model(s): {list[str](apps.keys())}\n")
 
 # Test each model
 for model_id in apps.keys():
-    print(f"Testing {model_id}...")
+    print(f"Testing {model_id}...", end=" ", flush=True)
     try:
         handle = serve.get_deployment_handle(model_id, app_name=model_id)
+        # Warmup request to reduce cold start latency
+        _ = handle.generate.remote("warmup").result()
+        
+        start = time.time()
         response = handle.generate.remote(PROMPT)
         result = response.result()
+        elapsed = time.time() - start
+        
         # Extract text from list if needed
         if isinstance(result, list) and len(result) > 0:
             text = result[0] if isinstance(result[0], str) else result[0]
         else:
             text = result
-        print(f"Response: {text}\n")
+        print(f"({elapsed:.2f}s) Response: {text[:100]}...\n")
     except Exception as e:
-        print(f"Error testing {model_id}: {e}\n")
-
-
+        print(f"Error: {e}\n")
 
 
 
