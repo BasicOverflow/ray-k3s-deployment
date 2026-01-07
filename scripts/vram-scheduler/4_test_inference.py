@@ -1,66 +1,158 @@
-"""Test inference on deployed models and load balancing."""
+"""Test inference through the unified router endpoint with 100 concurrent requests."""
 import os
 import sys
+import ray
+from ray import serve
 import time
+import asyncio
 
 vram_scheduler_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, vram_scheduler_dir)
 
-from ray import serve
 import ray_utils
 
-SUPPRESS_LOGGING = True
+SUPPRESS_LOGGING = False
+MODEL_ID = "max-llm"
+NUM_REQUESTS = 100
 
-PROMPT = "Write be a nice long poem about beer."
-
-ray_utils.init_ray(suppress_logging=SUPPRESS_LOGGING)
-
-# Get deployed models
-serve_status = serve.status()
-apps = serve_status.applications
-
-print(f"Found {len(apps)} model(s): {list[str](apps.keys())}\n")
-
-# Test each model
-for model_id in apps.keys():
-    print(f"Testing {model_id}...", end=" ", flush=True)
-    try:
-        handle = serve.get_deployment_handle(model_id, app_name=model_id)
-        # Warmup request to reduce cold start latency
-        _ = handle.generate.remote("warmup").result()
-        
-        start = time.time()
-        response = handle.generate.remote(PROMPT)
-        result = response.result()
-        elapsed = time.time() - start
-        
-        # Extract text from list if needed
-        if isinstance(result, list) and len(result) > 0:
-            text = result[0] if isinstance(result[0], str) else result[0]
-        else:
-            text = result
-        print(f"({elapsed:.2f}s) Response: {text[:100]}...\n")
-    except Exception as e:
-        print(f"Error: {e}\n")
-
-
-
-# Load balancing test
-if apps:
-    test_model = list(apps.keys())[0]
-    print(f"Load balancing test: sending 50 parallel requests to {test_model}")
+def main():
+    ray_utils.init_ray(suppress_logging=SUPPRESS_LOGGING)
+    
+    print(f"\n{'='*80}")
+    print(f"Testing {MODEL_ID} with {NUM_REQUESTS} concurrent inference requests")
+    print(f"{'='*80}\n")
     
     try:
-        handle = serve.get_deployment_handle(test_model, app_name=test_model)
-        start = time.time()
+        # Check status to find the router deployment name
+        status = serve.status()
+        router_deployment_name = None
         
-        # Send parallel requests
-        responses = [handle.generate.remote(f"{PROMPT} Request {i}") for i in range(50)]
-        results = [r.result() for r in responses]
+        if MODEL_ID in status.applications:
+            app_info = status.applications[MODEL_ID]
+            if hasattr(app_info, 'deployments'):
+                # Find the Router deployment (it's the only one in the app)
+                for dep_name in app_info.deployments.keys():
+                    router_deployment_name = dep_name
+                    break
         
-        elapsed = time.time() - start
-        print(f"Completed 50 requests in {elapsed:.2f}s ({50/elapsed:.1f} req/s)")
-        print(f"Received {len(results)} responses")
+        if not router_deployment_name:
+            print(f"Available applications: {list(status.applications.keys())}")
+            if MODEL_ID in status.applications:
+                app_info = status.applications[MODEL_ID]
+                print(f"Application {MODEL_ID} deployments: {list(app_info.deployments.keys()) if hasattr(app_info, 'deployments') else 'N/A'}")
+            raise RuntimeError(f"Could not find router deployment in application {MODEL_ID}")
+        
+        # Get handle to the unified router deployment
+        handle = serve.get_deployment_handle(router_deployment_name, app_name=MODEL_ID)
+        print(f"Using deployment handle: {router_deployment_name} in app {MODEL_ID}")
+        
+        # Test prompt
+        test_prompt = "Write a long poem about beer"
+        
+        print(f"Prompt: {test_prompt}")
+        print(f"\nSending {NUM_REQUESTS} concurrent requests...")
+        
+        # Create request payload
+        # max_tokens can be up to 8192 (max_model_len), but we use 8000 to account for prompt tokens
+        request = {
+            "prompt": test_prompt,
+            "max_tokens": 8000,
+            "temperature": 0.7
+        }
+        
+        # Send all requests concurrently
+        # Router uses async __call__ method, handle.remote() returns DeploymentResponse
+        # We can await them or use ray.get() on the responses
+        async def run_requests():
+            responses = [handle.remote(request) for _ in range(NUM_REQUESTS)]
+            # DeploymentResponse objects can be awaited directly
+            return [await resp for resp in responses]
+        
+        print(f"All {NUM_REQUESTS} requests submitted, waiting for responses...")
+        start_time = time.time()
+        results = asyncio.run(run_requests())
+        end_time = time.time()
+        
+        elapsed = end_time - start_time
+        
+        print(f"\n{'='*80}")
+        print(f"Results Summary")
+        print(f"{'='*80}")
+        print(f"Total requests: {NUM_REQUESTS}")
+        print(f"Total time: {elapsed:.2f}s")
+        print(f"Average time per request: {elapsed/NUM_REQUESTS:.2f}s")
+        print(f"Throughput: {NUM_REQUESTS/elapsed:.2f} requests/second")
+        
+        # Count successes/failures
+        successes = 0
+        failures = 0
+        for result in results:
+            if isinstance(result, dict) and "error" in result:
+                failures += 1
+            else:
+                successes += 1
+        
+        print(f"\nSuccesses: {successes}")
+        print(f"Failures: {failures}")
+        
+        # Write all results to file
+        output_file = f"inference_results_{int(time.time())}.txt"
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(f"{'='*80}\n")
+            f.write(f"Inference Test Results\n")
+            f.write(f"{'='*80}\n\n")
+            f.write(f"Model: {MODEL_ID}\n")
+            f.write(f"Prompt: {test_prompt}\n")
+            f.write(f"Total requests: {NUM_REQUESTS}\n")
+            f.write(f"Total time: {elapsed:.2f}s\n")
+            f.write(f"Average time per request: {elapsed/NUM_REQUESTS:.2f}s\n")
+            f.write(f"Throughput: {NUM_REQUESTS/elapsed:.2f} requests/second\n")
+            f.write(f"Successes: {successes}\n")
+            f.write(f"Failures: {failures}\n")
+            f.write(f"\n{'='*80}\n")
+            f.write(f"All Responses\n")
+            f.write(f"{'='*80}\n\n")
+            
+            for i, result in enumerate(results, 1):
+                f.write(f"\n{'='*80}\n")
+                f.write(f"Response #{i}\n")
+                f.write(f"{'='*80}\n")
+                if isinstance(result, dict):
+                    if "error" in result:
+                        f.write(f"❌ Error: {result['error']}\n")
+                    elif "text" in result:
+                        f.write(f"{result['text']}\n")
+                    else:
+                        f.write(f"{result}\n")
+                else:
+                    f.write(f"{result}\n")
+        
+        print(f"\n✅ All results written to: {output_file}")
+        
+        # Show first response as sample
+        print(f"\n{'='*80}")
+        print("Sample Response (first request):")
+        print(f"{'='*80}")
+        result = results[0]
+        if isinstance(result, dict):
+            if "error" in result:
+                print(f"❌ Error: {result['error']}")
+            elif "text" in result:
+                print(result["text"])
+            else:
+                print(result)
+        else:
+            print(result)
+            
     except Exception as e:
-        print(f"Error in load balancing test: {e}")
+        print(f"❌ Failed to test {MODEL_ID}: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    print(f"\n{'='*80}")
+    print("Inference testing complete!")
+    print(f"{'='*80}")
+
+if __name__ == "__main__":
+    main()
 

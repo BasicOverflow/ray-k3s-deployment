@@ -109,22 +109,29 @@ class VLLMModel:
                 available_gb = gpu_info.get("available", 0) if gpu_info else 0
                 raise RuntimeError(f"VRAM reservation failed on {gpu_key}: need {actual_required_gb:.2f}GB, have {available_gb:.2f}GB available")
             
-            # Get GPU memory info
-            total_memory_gb = torch.cuda.get_device_properties(actual_gpu_id).total_memory / (1024**3)
+            # Get GPU memory info from allocator (uses nvidia-smi data from daemonset)
+            gpu_info = ray.get(allocator.get_gpu_vram.remote(gpu_key))
+            if not gpu_info:
+                raise RuntimeError(f"Could not get GPU VRAM info for {gpu_key}")
+            
+            # Use total from allocator (nvidia-smi data from daemonset)
+            total_memory_gb = gpu_info.get("total", 0)
+            if total_memory_gb == 0:
+                # Fallback to CUDA if allocator doesn't have total
+                total_memory_gb = torch.cuda.get_device_properties(actual_gpu_id).total_memory / (1024**3)
             
             # Calculate utilization based on actual VRAM requirement (no conservative multipliers)
             gpu_memory_utilization = actual_required_gb / total_memory_gb
             gpu_memory_utilization = max(0.05, min(gpu_memory_utilization, 0.95))  # Cap at 95% to avoid OOM
             
-            # Simple memory check right before vLLM init (after lock acquired)
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-            free_bytes, total_bytes = torch.cuda.mem_get_info(actual_gpu_id)
-            free_gb = free_bytes / (1024**3)
+            # Memory check using daemonset's nvidia-smi data (consistent with reservation system)
+            # The reservation already validated availability, but we double-check using the same source
+            free_gb = gpu_info.get("free", 0)  # nvidia-smi free from daemonset
             requested_by_vllm_gb = gpu_memory_utilization * total_memory_gb
             
             if free_gb < requested_by_vllm_gb:
-                raise RuntimeError(f"Insufficient GPU memory on {gpu_key}: need {requested_by_vllm_gb:.2f}GB, have {free_gb:.2f}GB free")
+                available_gb = gpu_info.get("available", 0)
+                raise RuntimeError(f"Insufficient GPU memory on {gpu_key}: need {requested_by_vllm_gb:.2f}GB, have {free_gb:.2f}GB free (available: {available_gb:.2f}GB) from nvidia-smi")
             
             # Import vLLM
             try:

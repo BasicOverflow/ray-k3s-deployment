@@ -5,6 +5,8 @@ import ray
 
 vram_scheduler_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, vram_scheduler_dir)
+   
+
 
 import ray_utils
 import model_orchestrator
@@ -16,7 +18,8 @@ get_vram_allocator = vram_allocator.get_vram_allocator
 SUPPRESS_LOGGING = False
 
 MODEL_NAME = "Qwen/Qwen2-0.5B-Instruct"
-ACTUAL_VRAM_GB = 4  # Total VRAM per replica (model + KV cache + overhead)
+ACTUAL_VRAM_GB = 3.89  # Total VRAM per replica (model + KV cache + overhead)
+VRAM_BUFFER_PERCENT = 0.10  # Percentage of GPU to leave free as buffer (10% = 2.4GB on 24GB GPU)
 
 def main():
     ray_utils.init_ray(suppress_logging=SUPPRESS_LOGGING)
@@ -53,23 +56,31 @@ def main():
         print(f"    Total: {gpu_total:.2f}GB, Free: {gpu_free:.2f}GB, Available: {gpu_available:.2f}GB")
         print(f"    Pending: {gpu_pending:.2f}GB, Active: {gpu_active:.2f}GB")
         
-        # Use available VRAM (free - pending) for calculation
-        if gpu_available >= ACTUAL_VRAM_GB:
-            # Calculate how many replicas can fit based on available memory
-            gpu_replicas = int(gpu_available / ACTUAL_VRAM_GB)
-            replicas_per_gpu.append((gpu_key, gpu_replicas, gpu_available))
+        # Use available VRAM (free - pending) for calculation, minus percentage buffer
+        # Buffer is calculated as percentage of total GPU capacity
+        buffer_gb = gpu_total * VRAM_BUFFER_PERCENT
+        available_with_buffer = max(0, gpu_available - buffer_gb)
+        if available_with_buffer >= ACTUAL_VRAM_GB:
+            # Calculate how many replicas can fit based on available memory (with buffer)
+            gpu_replicas = int(available_with_buffer / ACTUAL_VRAM_GB)
+            replicas_per_gpu.append((gpu_key, gpu_replicas, gpu_available, buffer_gb, gpu_total))
     
-    max_replicas = sum(replicas for _, replicas, _ in replicas_per_gpu)
+    max_replicas = sum(replicas for _, replicas, _, _, _ in replicas_per_gpu)
     
     print(f"\nSummary:")
     print(f"  Total free VRAM: {total_free_vram:.2f} GB")
     print(f"  Total reserved VRAM: {total_reserved:.2f} GB")
     print(f"  VRAM per replica: {ACTUAL_VRAM_GB:.2f} GB")
-    print(f"  Replicas per GPU (based on available VRAM):")
-    for gpu_key, gpu_replicas, gpu_available in replicas_per_gpu:
-        print(f"    {gpu_key}: {gpu_replicas} replicas ({gpu_available:.2f}GB available)")
+    print(f"  VRAM buffer: {VRAM_BUFFER_PERCENT*100:.1f}% of GPU capacity")
+    print(f"  Replicas per GPU:")
+    for gpu_key, gpu_replicas, gpu_available, buffer_gb, gpu_total in replicas_per_gpu:
+        available_with_buffer = max(0, gpu_available - buffer_gb)
+        total_vram_used = gpu_replicas * ACTUAL_VRAM_GB
+        print(f"    {gpu_key}: {gpu_replicas} replicas - {total_vram_used:.2f}GB used from {available_with_buffer:.2f}GB (included {VRAM_BUFFER_PERCENT*100:.0f}% buffer deducted from {gpu_total:.2f}GB available)")
     print(f"  Can deploy {max_replicas} replicas total")
     
+    # input("hold")
+
     if max_replicas > 0:
         # Create model config - no pre-assignments, let replicas find GPUs dynamically
         # Ray Serve doesn't guarantee placement anyway, so pre-calculating doesn't help

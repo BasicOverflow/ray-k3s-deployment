@@ -17,6 +17,59 @@ VLLMModel = vllm_model_actor.VLLMModel
 class ModelOrchestrator:
     """Deploys models via Ray Serve based on configuration."""
     
+    # VRAM buffer percentage - leave this percentage of GPU capacity free
+    VRAM_BUFFER_PERCENT = 0.15  # 15% buffer (e.g., 3.6GB on 24GB GPU)
+    
+    def _create_router_deployment(self, model_id: str, deployment_names: List[str], app_names: List[str]):
+        """Create a router deployment that forwards requests to all GPU-specific deployments.
+        
+        Uses Ray Serve's built-in load balancing: deployment handles automatically load balance
+        across replicas within each deployment. The router just selects which deployment handle
+        to use, and Ray Serve handles the rest.
+        """
+        import random
+        
+        @serve.deployment(
+            ray_actor_options={"num_cpus": 0.1},
+            autoscaling_config={"min_replicas": 1, "max_replicas": 1}
+        )
+        class Router:
+            def __init__(self):
+                self.deployment_handles = []
+                # Get handles to all GPU deployments
+                # Ray Serve handles automatically load balance across replicas within each deployment
+                for dep_name, app_name in zip(deployment_names, app_names):
+                    try:
+                        handle = serve.get_deployment_handle(dep_name, app_name=app_name)
+                        self.deployment_handles.append(handle)
+                        print(f"    Router: Connected to {dep_name} in {app_name}")
+                    except Exception as e:
+                        print(f"    Router: Warning - Could not connect to {dep_name}: {e}")
+                
+                if not self.deployment_handles:
+                    raise RuntimeError("Router: No deployment handles available")
+                
+                print(f"    Router: Load balancing across {len(self.deployment_handles)} deployments")
+            
+            async def __call__(self, request):
+                """Forward request to a random deployment handle.
+                
+                Ray Serve's deployment handles automatically load balance across replicas
+                within each deployment, so we just need to select which deployment to use.
+                """
+                if not self.deployment_handles:
+                    return {"error": "No deployments available"}
+                
+                # Random selection across deployments (Ray Serve handles load balancing within each)
+                handle = random.choice(self.deployment_handles)
+                return await handle.generate.remote(request)
+        
+        serve.run(
+            Router.bind(),
+            name=model_id,  # Unified application name for the router
+            route_prefix=f"/{model_id}"  # Unified route prefix
+        )
+    
     def _wait_for_deployment_ready(self, deployment_name: str, expected_replicas: int, gpu_key: str = None, timeout: int = 300) -> bool:
         """Wait for deployment to have expected number of replicas fully initialized (RUNNING).
         
@@ -164,10 +217,15 @@ class ModelOrchestrator:
                 
                 available_gb = gpu_info.get("available", 0)
                 available_mb = int(available_gb * 1024)
+                total_gb = gpu_info.get("total", 16.0)
                 
-                # Calculate how many replicas can fit on this GPU based on available VRAM
+                # Apply VRAM buffer (percentage of total GPU capacity)
+                buffer_gb = total_gb * self.VRAM_BUFFER_PERCENT
+                available_with_buffer = max(0, available_gb - buffer_gb)
+                
+                # Calculate how many replicas can fit on this GPU based on available VRAM (with buffer)
                 replicas_for_gpu = min(
-                    int(available_gb / required_per_replica_gb),
+                    int(available_with_buffer / required_per_replica_gb),
                     remaining_replicas
                 )
                 
@@ -182,6 +240,7 @@ class ModelOrchestrator:
                     total_gb = gpu_info.get("total", 16.0)
                     gpu_fraction = (required_per_replica_gb * replicas_for_gpu) / total_gb / replicas_for_gpu
                     gpu_fraction = max(gpu_fraction, 0.01)  # Minimum 0.01 to allow scheduling
+                    gpu_fraction = round(gpu_fraction, 2)  # Round to 2 decimal places
                     
                     gpu_deployments.append({
                         "gpu_key": gpu_key,
@@ -193,20 +252,28 @@ class ModelOrchestrator:
                     total_replicas_assigned += replicas_for_gpu
                     remaining_replicas -= replicas_for_gpu
                     
-                    print(f"  GPU {gpu_key}: {replicas_for_gpu} replicas (available: {available_gb:.2f}GB, resource: {resource_name})")
+                    print(f"  GPU {gpu_key}: {replicas_for_gpu} replicas (available: {available_gb:.2f}GB, buffer: {buffer_gb:.2f}GB, after buffer: {available_with_buffer:.2f}GB, resource: {resource_name})")
             
             if total_replicas_assigned < config["replicas"]:
                 print(f"  WARNING: Only {total_replicas_assigned}/{config['replicas']} replicas can be deployed (insufficient VRAM)")
             
             # Create separate deployment for each GPU with custom resource requests
-            # Deploy all replicas at once - custom resources ensure proper placement
+            # Store deployment and app names for router
+            gpu_deployment_names = []
+            gpu_app_names = []
+            
             for deployment_info in gpu_deployments:
                 total_replicas = deployment_info["replicas"]
                 deployment_name = f"{model_id}-{deployment_info['gpu_key'].replace(':', '-').replace('_', '-')}"
+                app_name = f"{model_id}-gpu-{deployment_info['gpu_key'].replace(':', '-')}"  # Unique app name per GPU
+                
+                gpu_deployment_names.append(deployment_name)
+                gpu_app_names.append(app_name)
                 
                 print(f"  Creating deployment {deployment_name} with {total_replicas} replicas")
                 print(f"    Resource: {deployment_info['resource_name']} = 1")
-                print(f"    GPU fraction per replica: {deployment_info['gpu_fraction']:.4f}")
+                print(f"    GPU fraction per replica: {deployment_info['gpu_fraction']:.2f}")
+                print(f"    Application: {app_name}")
                 
                 serve.run(
                     VLLMModel.options(
@@ -227,9 +294,20 @@ class ModelOrchestrator:
                         model_name=config["name"],
                         required_vram_gb=config["vram_gb"]
                     ),
-                    name=deployment_name,
-                    route_prefix=f"/{deployment_name}"
+                    name=app_name,  # Unique app name per GPU deployment
+                    route_prefix=f"/{deployment_name}"  # Unique route for direct access
                 )
+            
+            # Create router deployment that provides unified endpoint
+            # Router uses Ray Serve's built-in load balancing via deployment handles
+            if len(gpu_deployment_names) > 1:
+                print(f"  Creating router deployment for unified endpoint: /{model_id}")
+                self._create_router_deployment(model_id, gpu_deployment_names, gpu_app_names)
+            elif len(gpu_deployment_names) == 1:
+                # Single deployment - no router needed, but create alias for consistency
+                print(f"  Single deployment - accessible at /{gpu_deployment_names[0]} or /{model_id}")
+                # Optionally create router anyway for consistent API
+                self._create_router_deployment(model_id, gpu_deployment_names, gpu_app_names)
         
         print("All models deployed!")
 
