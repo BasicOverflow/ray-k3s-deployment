@@ -18,7 +18,7 @@ class ModelOrchestrator:
     """Deploys models via Ray Serve based on configuration."""
     
     # VRAM buffer - hard buffer to leave free on every GPU
-    VRAM_BUFFER_GB = 0.5  # 0.5GB buffer per GPU
+    VRAM_BUFFER_GB = 0.4  # 0.4GB buffer per GPU
     
     def _create_router_deployment(self, model_id: str, deployment_names: List[str], app_names: List[str]):
         """Create a router deployment that forwards requests to all GPU-specific deployments.

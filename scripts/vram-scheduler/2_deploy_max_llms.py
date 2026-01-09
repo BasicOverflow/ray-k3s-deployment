@@ -50,10 +50,11 @@ def main():
         print(f"    Total: {gpu_total:.2f}GB, Free: {gpu_free:.2f}GB, Available: {gpu_available:.2f}GB")
         print(f"    Pending: {gpu_pending:.2f}GB, Active: {gpu_active:.2f}GB")
         
-        # Use available VRAM (free - pending) for calculation
-        if gpu_available >= ACTUAL_VRAM_GB:
-            # Calculate how many replicas can fit based on available memory
-            gpu_replicas = int(gpu_available / ACTUAL_VRAM_GB)
+        # Use available VRAM (free - pending) for calculation, minus buffer
+        available_with_buffer = max(0, gpu_available - ModelOrchestrator.VRAM_BUFFER_GB)
+        if available_with_buffer >= ACTUAL_VRAM_GB:
+            # Calculate how many replicas can fit based on available memory (with buffer)
+            gpu_replicas = int(available_with_buffer / ACTUAL_VRAM_GB)
             replicas_per_gpu.append((gpu_key, gpu_replicas, gpu_available, gpu_total))
     
     max_replicas = sum(replicas for _, replicas, _, _ in replicas_per_gpu)
@@ -62,10 +63,12 @@ def main():
     print(f"  Total free VRAM: {total_free_vram:.2f} GB")
     print(f"  Total reserved VRAM: {total_reserved:.2f} GB")
     print(f"  VRAM per replica: {ACTUAL_VRAM_GB:.2f} GB")
+    print(f"  VRAM buffer: {ModelOrchestrator.VRAM_BUFFER_GB:.2f}GB per GPU")
     print(f"  Replicas per GPU:")
     for gpu_key, gpu_replicas, gpu_available, gpu_total in replicas_per_gpu:
+        available_with_buffer = max(0, gpu_available - ModelOrchestrator.VRAM_BUFFER_GB)
         total_vram_used = gpu_replicas * ACTUAL_VRAM_GB
-        print(f"    {gpu_key}: {gpu_replicas} replicas - {total_vram_used:.2f}GB used from {gpu_available:.2f}GB available")
+        print(f"    {gpu_key}: {gpu_replicas} replicas - {total_vram_used:.2f}GB used from {available_with_buffer:.2f}GB available (after {ModelOrchestrator.VRAM_BUFFER_GB:.2f}GB buffer)")
     print(f"  Can deploy {max_replicas} replicas total")
     
     # input("hold")
