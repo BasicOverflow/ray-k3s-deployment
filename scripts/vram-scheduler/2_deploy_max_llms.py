@@ -18,7 +18,7 @@ get_vram_allocator = vram_allocator.get_vram_allocator
 SUPPRESS_LOGGING = False
 
 MODEL_NAME = "Qwen/Qwen2-0.5B-Instruct"
-ACTUAL_VRAM_GB = 3.89  # Total VRAM per replica (model + KV cache + overhead)
+ACTUAL_VRAM_GB = 3.89  # Total VRAM per replica (model + KV cache)
 VRAM_BUFFER_GB = 0.1  # Hard buffer to leave free on every GPU (GB)
 
 def main():
