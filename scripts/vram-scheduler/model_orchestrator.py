@@ -4,6 +4,7 @@ from ray import serve
 from typing import Dict, List
 import sys
 import os
+import threading
 
 vram_scheduler_dir = os.path.dirname(os.path.abspath(__file__))
 if vram_scheduler_dir not in sys.path:
@@ -34,25 +35,17 @@ class ModelOrchestrator:
                 total_replicas = sum(replica_counts)
                 
                 for dep_name, app_name, replicas in zip(deployment_names, app_names, replica_counts):
-                    try:
-                        handle = serve.get_deployment_handle(dep_name, app_name=app_name)
-                        self.deployment_handles.append(handle)
-                        self.weights.append(replicas / total_replicas)
-                        print(f"    Router: Connected to {dep_name} ({replicas} replicas, {replicas/total_replicas*100:.1f}% weight)")
-                    except Exception as e:
-                        print(f"    Router: Warning - Could not connect to {dep_name}: {e}")
-                
-                if not self.deployment_handles:
-                    raise RuntimeError("Router: No deployment handles available")
+                    handle = serve.get_deployment_handle(dep_name, app_name=app_name)
+                    self.deployment_handles.append(handle)
+                    self.weights.append(replicas / total_replicas)
+                    print(f"    Router: Connected to {dep_name} ({replicas} replicas, {replicas/total_replicas*100:.1f}% weight)")
             
             async def __call__(self, request):
                 """Forward request to a deployment handle weighted by replica count."""
                 handle = random.choices(self.deployment_handles, weights=self.weights)[0]
                 result = await handle.remote(request)
-                # Convert list result to dict format
-                if isinstance(result, list) and len(result) > 0:
-                    return {"text": result[0] if isinstance(result[0], str) else str(result[0])}
-                return {"text": str(result)}
+                text = result[0] if isinstance(result, list) and result else str(result)
+                return {"text": text if isinstance(text, str) else str(text)}
         
         serve.run(
             Router.bind(),
@@ -62,13 +55,14 @@ class ModelOrchestrator:
     
     def apply(self, model_configs: Dict):
         """Deploy all models from configuration."""
+        serve.start()
+        
         for model_id, config in model_configs.items():
             print(f"Deploying {model_id}: {config['name']}, {config['vram_gb']}GB, {config['replicas']} replicas")
             
             # Get VRAM allocator to query GPU state
             allocator = ray.get_actor("vram_allocator", namespace="system")
             gpu_info_map = ray.get(allocator.get_all_gpus.remote())
-            
             if not gpu_info_map:
                 raise RuntimeError("No GPU info available from VRAM allocator")
             
@@ -96,12 +90,10 @@ class ModelOrchestrator:
                 if remaining_replicas <= 0:
                     break
                 
-                available_gb = gpu_info.get("available", 0)
-                total_gb = gpu_info.get("total", 16.0)
+                available_gb = gpu_info["available"]
+                total_gb = gpu_info["total"]
                 
-                # Apply VRAM buffer (hard buffer per GPU)
-                buffer_gb = self.VRAM_BUFFER_GB
-                available_with_buffer = max(0, available_gb - buffer_gb)
+                available_with_buffer = max(0, available_gb - self.VRAM_BUFFER_GB)
                 
                 # Calculate how many replicas can fit on this GPU based on available VRAM (with buffer)
                 replicas_for_gpu = min(
@@ -131,59 +123,81 @@ class ModelOrchestrator:
                     total_replicas_assigned += replicas_for_gpu
                     remaining_replicas -= replicas_for_gpu
                     
-                    print(f"  GPU {gpu_key}: {replicas_for_gpu} replicas (available: {available_gb:.2f}GB, buffer: {buffer_gb:.2f}GB, after buffer: {available_with_buffer:.2f}GB, resource: {resource_name})")
+                    print(f"  GPU {gpu_key}: {replicas_for_gpu} replicas (available: {available_gb:.2f}GB, buffer: {self.VRAM_BUFFER_GB:.2f}GB, after buffer: {available_with_buffer:.2f}GB, resource: {resource_name})")
             
             if total_replicas_assigned < config["replicas"]:
                 print(f"  WARNING: Only {total_replicas_assigned}/{config['replicas']} replicas can be deployed (insufficient VRAM)")
             
-            # Create separate deployment for each GPU with custom resource requests
-            # Store deployment and app names for router
-            gpu_deployment_names = []
-            gpu_app_names = []
-            
+            deployment_configs = []
             for deployment_info in gpu_deployments:
-                total_replicas = deployment_info["replicas"]
-                gpu_id = deployment_info["gpu_id"]
                 deployment_name = f"{model_id}-{deployment_info['gpu_key'].replace(':', '-').replace('_', '-')}"
-                app_name = f"{model_id}-gpu-{deployment_info['gpu_key'].replace(':', '-')}"  # Unique app name per GPU
-                
-                gpu_deployment_names.append(deployment_name)
-                gpu_app_names.append(app_name)
-                
-                print(f"  Creating deployment {deployment_name} with {total_replicas} replicas")
+                app_name = f"{model_id}-gpu-{deployment_info['gpu_key'].replace(':', '-')}"
+                deployment_configs.append({
+                    "deployment_info": deployment_info,
+                    "deployment_name": deployment_name,
+                    "app_name": app_name,
+                    "model_id": model_id,
+                    "config": config
+                })
+                print(f"  Queueing deployment {deployment_name} with {deployment_info['replicas']} replicas")
                 print(f"    Resource: {deployment_info['resource_name']} = 1")
-                print(f"    GPU ID: {gpu_id} (CUDA_VISIBLE_DEVICES={gpu_id})")
+                print(f"    GPU ID: {deployment_info['gpu_id']} (CUDA_VISIBLE_DEVICES={deployment_info['gpu_id']})")
                 print(f"    GPU fraction per replica: {deployment_info['gpu_fraction']:.2f}")
-                print(f"    Application: {app_name}")
+            
+            def deploy_single(deployment_config, results_list, lock):
+                """Deploy a single GPU deployment."""
+                info = deployment_config["deployment_info"]
+                deployment_name = deployment_config["deployment_name"]
+                app_name = deployment_config["app_name"]
+                model_id = deployment_config["model_id"]
+                config = deployment_config["config"]
                 
                 serve.run(
                     VLLMModel.options(
                         name=deployment_name,
                         ray_actor_options={
-                            "num_gpus": deployment_info["gpu_fraction"],
+                            "num_gpus": info["gpu_fraction"],
                             "memory": 2 * 1024 * 1024 * 1024,
-                            "resources": {
-                                deployment_info["resource_name"]: 1
-                            }
+                            "resources": {info["resource_name"]: 1}
                         },
                         autoscaling_config={
-                            "min_replicas": total_replicas,
-                            "max_replicas": total_replicas
+                            "min_replicas": info["replicas"],
+                            "max_replicas": info["replicas"]
                         }
                     ).bind(
                         model_id=model_id,
                         model_name=config["name"],
                         required_vram_gb=config["vram_gb"],
-                        target_gpu_id=gpu_id
+                        target_gpu_id=info["gpu_id"]
                     ),
-                    name=app_name,  # Unique app name per GPU deployment
-                    route_prefix=f"/{deployment_name}"  # Unique route for direct access
+                    name=app_name,
+                    route_prefix=f"/{deployment_name}"
                 )
+                with lock:
+                    results_list.append((deployment_name, app_name, info["replicas"]))
+            
+            print(f"  Deploying {len(deployment_configs)} deployments in parallel...")
+            results = []
+            lock = threading.Lock()
+            threads = []
+            
+            for deployment_config in deployment_configs:
+                thread = threading.Thread(target=deploy_single, args=(deployment_config, results, lock))
+                thread.start()
+                threads.append(thread)
+            
+            for thread in threads:
+                thread.join()
+            
+            gpu_deployment_names = [r[0] for r in results]
+            gpu_app_names = [r[1] for r in results]
+            replica_counts = [r[2] for r in results]
+            
+            print(f"  ✅ All {len(results)} deployments started")
             
             # Create router deployment that provides unified endpoint (only if multiple GPUs)
             if len(gpu_deployment_names) > 1:
                 print(f"  Creating router deployment for unified endpoint: /{model_id}")
-                replica_counts = [info["replicas"] for info in gpu_deployments]
                 self._create_router_deployment(model_id, gpu_deployment_names, gpu_app_names, replica_counts)
         
         print("All models deployed!")
