@@ -54,16 +54,6 @@ def main():
     
     print(f"Results: {successes}/{NUM_REQUESTS} success, {elapsed:.2f}s total, {NUM_REQUESTS/elapsed:.2f} req/s")
     
-    # Try to get router stats if using router
-    if app_name == MODEL_ID:
-        try:
-            router_handle = serve.get_deployment_handle(deployment_name, app_name=app_name)
-            # Router has get_stats method, but we can't easily call it from here
-            # The stats are tracked internally
-            print("Note: Router tracks request distribution internally")
-        except:
-            pass
-    
     output_file = f"inference_results_{int(time.time())}.txt"
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(f"Model: {MODEL_ID}\nPrompt: {test_prompt}\n")

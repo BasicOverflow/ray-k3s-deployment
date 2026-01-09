@@ -162,7 +162,16 @@ class VLLMModel:
                 ray.get(allocator.release.remote(self.replica_id, self.gpu_key))
             except:
                 pass
-        
+    
+    def __call__(self, request):
+        """Ray Serve entry point - accepts request dict and calls generate."""
+        if isinstance(request, dict):
+            prompt = request.get("prompt", "")
+            kwargs = {k: v for k, v in request.items() if k != "prompt"}
+        else:
+            prompt = str(request)
+            kwargs = {}
+        return self.generate(prompt, **kwargs)
     
     def generate(self, prompt: str, **kwargs):
         """Generate text using the model."""
