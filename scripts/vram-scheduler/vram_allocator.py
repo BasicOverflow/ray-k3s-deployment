@@ -150,7 +150,9 @@ class VRAMAllocator:
                 "free": gpu["free"],
                 "available": available,
                 "pending": sum(gpu["pending"].values()),
-                "active": sum(gpu["active"].values())
+                "active": sum(gpu["active"].values()),
+                "pending_count": len(gpu["pending"]),
+                "active_count": len(gpu["active"])
             }
         return result
     

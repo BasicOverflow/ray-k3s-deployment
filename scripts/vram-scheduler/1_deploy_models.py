@@ -41,7 +41,9 @@ def main():
     
     print("\nVRAM State (Per-GPU):")
     for gpu_key, info in state.items():
-        active_count = info.get("active_count", 0) if "active_count" in info else 0
+        if len(gpu_key) > 50 or gpu_key.startswith('c'):
+            continue
+        active_count = info.get("active_count", 0)
         print(f"  {gpu_key}: {info['free']:.2f}GB free / {info['total']:.2f}GB total, {active_count} replicas loaded")
 
 if __name__ == "__main__":
