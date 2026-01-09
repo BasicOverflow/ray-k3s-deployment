@@ -74,21 +74,14 @@ class VLLMModel:
         # Use VRAM requirement directly (already accounts for model + KV cache + overhead)
         actual_required_gb = required_vram_gb
         
-        # Detect actual GPU being used (CUDA is already initialized)
-        actual_gpu_id = torch.cuda.current_device()
-        actual_gpu_key = f"{k8s_node_name}:gpu{actual_gpu_id}"
-        
-        # Try to find an available GPU on this node first
-        # This handles cases where Ray schedules us on a node but we need to find the right GPU
-        found_gpu = ray.get(allocator.find_gpu_with_vram.remote(actual_required_gb, node_id=k8s_node_name))
-        
-        if found_gpu and found_gpu.startswith(k8s_node_name + ":"):
-            # Found an available GPU on this node
-            gpu_key = found_gpu
+        # Determine GPU key based on target_gpu_id
+        if target_gpu_id is not None:
+            # We set CUDA_VISIBLE_DEVICES, so we know exactly which GPU we're using
+            gpu_key = f"{k8s_node_name}:gpu{target_gpu_id}"
         else:
-            # No available GPU on this node, use the one we're actually on
-            # This will fail during reservation if it's full, causing Ray to reschedule
-            gpu_key = actual_gpu_key
+            # Legacy: detect actual GPU being used (CUDA is already initialized)
+            actual_gpu_id = torch.cuda.current_device()
+            gpu_key = f"{k8s_node_name}:gpu{actual_gpu_id}"
         
         self.gpu_key = gpu_key
         
