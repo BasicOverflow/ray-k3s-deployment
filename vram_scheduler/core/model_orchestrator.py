@@ -10,7 +10,7 @@ from .model_router import ModelRouter
 class ModelOrchestrator:
     """Deploys models via Ray Serve based on configuration."""
     
-    VRAM_BUFFER_GB = 0.2
+    VRAM_BUFFER_GB = 0.0
     
     def __init__(self):
         """Initialize orchestrator with state storage for deployment configurations."""

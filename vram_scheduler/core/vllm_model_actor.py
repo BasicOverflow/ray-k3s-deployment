@@ -153,7 +153,7 @@ class VLLMModel:
             activation_buffer_gb = activation_buffer_bytes / (1024**3)
             
             if max_num_seqs is None:
-                overhead_gb = 0.05
+                overhead_gb = 0.0
                 available_for_kv = max(0, available_memory_gb - required_vram_weights_gb - activation_buffer_gb - overhead_gb)
                 max_num_seqs = max(1, int(available_for_kv / kv_cache_per_seq_gb))
                 print(f"[{model_id}] ✅ Calculated max_num_seqs={max_num_seqs} for GPU {gpu_key} (available={available_memory_gb:.2f}GB, KV/seq={kv_cache_per_seq_gb:.3f}GB)", flush=True)
@@ -173,12 +173,12 @@ class VLLMModel:
             }
             
             kv_cache_total_gb = kv_cache_per_seq_gb * max_num_seqs
-            overhead_gb = 0.05
+            overhead_gb = 0.0
             total_needed_gb = required_vram_weights_gb + kv_cache_total_gb + activation_buffer_gb + overhead_gb
             print(f"[{model_id}] VRAM breakdown: weights={required_vram_weights_gb:.3f}GB, KV cache={kv_cache_total_gb:.3f}GB, activation={activation_buffer_gb:.3f}GB, total={total_needed_gb:.3f}GB", flush=True)
             
-            # Cap at 98% utilization (leaves ~2% buffer, ~0.5GB on 24GB GPU)
-            calculated_utilization = min(0.98, round(total_needed_gb / total_memory_gb, 3))
+            # Cap at 97% utilization (leaves ~3% buffer, ~0.72GB on 24GB GPU)
+            calculated_utilization = min(0.97, round(total_needed_gb / total_memory_gb, 3))
             
             if "gpu_memory_utilization" not in vllm_kwargs:
                 vllm_init_kwargs["gpu_memory_utilization"] = calculated_utilization
