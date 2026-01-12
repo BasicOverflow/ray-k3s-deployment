@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vram-scheduler"
+name = "ray-hive"
 version = "0.1.0"
-description = "VRAM-aware LLM serving for Ray clusters"
+description = "Distributed LLM serving engine for Ray clusters"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
@@ -27,7 +27,7 @@ classifiers = [
 
 dependencies = [
     "ray[serve]>=2.8.0",
-    "vllm>=0.2.0",
+    "vllm>=0.11.1",
     "pydantic>=2.0.0",
     "torch>=2.0.0",
 ]
@@ -41,7 +41,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["vram_scheduler*"]
+include = ["ray_hive*"]
 
 [tool.black]
 line-length = 100

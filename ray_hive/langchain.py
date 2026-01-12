@@ -1,7 +1,7 @@
-"""LangChain compatibility layer for VRAM scheduler.
+"""LangChain compatibility layer for Ray Hive.
 
 TODO: Implement LangChain LLM wrapper
-- Create LangChain LLM class that wraps VRAMScheduler
+- Create LangChain LLM class that wraps RayHive
 - Implement __call__ method for text generation
 - Implement generate method for batch generation
 - Implement stream method for streaming
@@ -13,8 +13,8 @@ TODO: Implement LangChain LLM wrapper
 # from langchain.llms.base import LLM
 # from typing import Optional, List, Any
 # 
-# class VRAMSchedulerLLM(LLM):
-#     """LangChain LLM wrapper for VRAMScheduler."""
+# class RayHiveLLM(LLM):
+#     """LangChain LLM wrapper for RayHive."""
 #     
 #     model_id: str
 #     router_name: Optional[str] = None
@@ -30,5 +30,5 @@ TODO: Implement LangChain LLM wrapper
 #     
 #     @property
 #     def _llm_type(self) -> str:
-#         return "vram_scheduler"
+#         return "ray_hive"
 

@@ -23,6 +23,11 @@ class StderrFilter:
             "INFO 2026",
             "WARNING 2026",
             "[2026-",  # C++ warnings with timestamp
+            "InvalidStateError: CANCELLED",
+            "state=cancelled",
+            "Callback error",
+            "dataclient.py",
+            "ray_client_streaming_rpc",
         ]
     
     def write(self, text):

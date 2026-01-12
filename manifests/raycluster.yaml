@@ -205,7 +205,8 @@ spec:
             fi
             echo "Installing vllm to /vllm-install..."
             # Install vllm - pip -t creates lib/python3.12/site-packages structure
-            pip install --no-cache-dir -t /vllm-install vllm || {
+            # vLLM 0.11.1+ (latest) required for guided_json support
+            pip install --no-cache-dir -t /vllm-install "vllm>=0.11.1" || {
               echo "ERROR: vllm installation failed!"
               exit 1
             }
@@ -368,7 +369,8 @@ spec:
             fi
             echo "Installing vllm to /vllm-install..."
             # Install vllm - pip -t creates lib/python3.12/site-packages structure
-            pip install --no-cache-dir -t /vllm-install vllm || {
+            # vLLM 0.11.1+ (latest) required for guided_json support
+            pip install --no-cache-dir -t /vllm-install "vllm>=0.11.1" || {
               echo "ERROR: vllm installation failed!"
               exit 1
             }
@@ -531,7 +533,8 @@ spec:
             fi
             echo "Installing vllm to /vllm-install..."
             # Install vllm - pip -t creates lib/python3.12/site-packages structure
-            pip install --no-cache-dir -t /vllm-install vllm || {
+            # vLLM 0.11.1+ (latest) required for guided_json support
+            pip install --no-cache-dir -t /vllm-install "vllm>=0.11.1" || {
               echo "ERROR: vllm installation failed!"
               exit 1
             }

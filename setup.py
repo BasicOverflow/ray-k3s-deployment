@@ -1,14 +1,14 @@
-"""Setup configuration for vram-scheduler package."""
+"""Setup configuration for ray-hive package."""
 from setuptools import setup, find_packages
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="vram-scheduler",
+    name="ray-hive",
     version="0.1.0",
     author="Your Name",
-    description="VRAM-aware LLM serving for Ray clusters",
+    description="Distributed LLM serving engine for Ray clusters",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/yourusername/ray-k3s-deployment",
@@ -27,7 +27,7 @@ setup(
     python_requires=">=3.8",
     install_requires=[
         "ray[serve]>=2.8.0",
-        "vllm>=0.2.0",
+        "vllm>=0.11.1",
         "pydantic>=2.0.0",
         "torch>=2.0.0",
     ],

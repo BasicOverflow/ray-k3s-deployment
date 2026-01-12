@@ -1,4 +1,4 @@
-"""Main VRAMScheduler client class."""
+"""Main RayHive client class."""
 import ray
 from typing import Dict, Optional
 from .core.vram_allocator import get_vram_allocator
@@ -7,11 +7,11 @@ from .shutdown import shutdown_all, shutdown_model
 from .utils.ray_utils import init_ray
 
 
-class VRAMScheduler:
-    """Main client for VRAM-aware LLM serving."""
+class RayHive:
+    """Main client for distributed LLM serving."""
     
     def __init__(self, suppress_logging: bool = True, **kwargs):
-        """Initialize VRAMScheduler.
+        """Initialize RayHive.
         
         Args:
             suppress_logging: Suppress Ray logging

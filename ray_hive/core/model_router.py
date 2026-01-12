@@ -185,11 +185,25 @@ class ModelRouter:
             
             # Update performance metrics
             response_time = time.time() - start_time
+            
+            # Normalize by batch size (time per prompt) for fair comparison
+            num_prompts = 1
+            if isinstance(request, dict):
+                if "prompts" in request:
+                    num_prompts = len(request["prompts"]) if isinstance(request["prompts"], list) else 1
+                elif "prompt" in request:
+                    num_prompts = 1
+            elif isinstance(result, list):
+                num_prompts = len(result)
+            
+            # Calculate time per prompt
+            time_per_prompt = response_time / max(num_prompts, 1)
+            
             async with self._lock:
                 # Exponential moving average: new_avg = alpha * new + (1 - alpha) * old
                 alpha = 0.1  # Smoothing factor (10% new, 90% old)
                 self._response_times[deployment_index] = (
-                    alpha * response_time + (1 - alpha) * self._response_times[deployment_index]
+                    alpha * time_per_prompt + (1 - alpha) * self._response_times[deployment_index]
                 )
             
             return result

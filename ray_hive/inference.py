@@ -69,23 +69,25 @@ def _extract_text(result):
 
 
 def _parse_structured_output(text: str, pydantic_class: Type[BaseModel]):
-    """Parse structured output from text."""
+    """Parse structured output from text. vLLM's guided_json ensures valid JSON."""
     import json
-    import re
     
-    json_match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
-    if json_match:
-        try:
-            parsed = json.loads(json_match.group(0))
-            return pydantic_class(**parsed)
-        except:
-            pass
-    
+    text = text.strip()
     try:
-        parsed = json.loads(text)
-        return pydantic_class(**parsed)
-    except:
-        raise ValueError(f"Could not parse structured output from: {text}")
+        return pydantic_class(**json.loads(text))
+    except json.JSONDecodeError:
+        start = text.find('{')
+        if start != -1:
+            count = 0
+            for i in range(start, len(text)):
+                if text[i] == '{': count += 1
+                elif text[i] == '}': count -= 1
+                if count == 0:
+                    try:
+                        return pydantic_class(**json.loads(text[start:i+1]))
+                    except json.JSONDecodeError:
+                        break
+        raise ValueError(f"Could not parse JSON from model output. Text: {text[:200]}")
 
 
 def inference(
@@ -101,6 +103,11 @@ def inference(
     request = {"prompt": prompt}
     if max_tokens is not None:
         request["max_tokens"] = max_tokens
+    
+    # Use vLLM's native guided_json for structured output
+    if structured_output:
+        request["guided_json"] = structured_output.model_json_schema()
+    
     request.update(kwargs)
     
     result = handle.remote(request).result()
@@ -125,6 +132,11 @@ async def a_inference(
     request = {"prompt": prompt}
     if max_tokens is not None:
         request["max_tokens"] = max_tokens
+    
+    # Use vLLM's native guided_json for structured output
+    if structured_output:
+        request["guided_json"] = structured_output.model_json_schema()
+    
     request.update(kwargs)
     
     result = await handle.remote(request)
@@ -162,6 +174,11 @@ def inference_batch(
     request_template = {}
     if max_tokens is not None:
         request_template["max_tokens"] = max_tokens
+    
+    # Use vLLM's native guided_json for structured output
+    if structured_output:
+        request_template["guided_json"] = structured_output.model_json_schema()
+    
     request_template.update(kwargs)
     
     # Auto-calculate batch size based on model's max_num_seqs if not specified
@@ -188,16 +205,10 @@ def inference_batch(
         if isinstance(batch_result, list):
             for result in batch_result:
                 text = _extract_text(result)
-                if structured_output:
-                    output.append(_parse_structured_output(text, structured_output))
-                else:
-                    output.append(text)
+                output.append(_parse_structured_output(text, structured_output) if structured_output else text)
         else:
             text = _extract_text(batch_result)
-            if structured_output:
-                output.append(_parse_structured_output(text, structured_output))
-            else:
-                output.append(text)
+            output.append(_parse_structured_output(text, structured_output) if structured_output else text)
     
     return output
 
@@ -228,6 +239,11 @@ async def a_inference_batch(
     request_template = {}
     if max_tokens is not None:
         request_template["max_tokens"] = max_tokens
+    
+    # Use vLLM's native guided_json for structured output
+    if structured_output:
+        request_template["guided_json"] = structured_output.model_json_schema()
+    
     request_template.update(kwargs)
     
     # Auto-calculate batch size based on model's max_num_seqs if not specified
@@ -254,16 +270,10 @@ async def a_inference_batch(
         if isinstance(batch_result, list):
             for result in batch_result:
                 text = _extract_text(result)
-                if structured_output:
-                    output.append(_parse_structured_output(text, structured_output))
-                else:
-                    output.append(text)
+                output.append(_parse_structured_output(text, structured_output) if structured_output else text)
         else:
             text = _extract_text(batch_result)
-            if structured_output:
-                output.append(_parse_structured_output(text, structured_output))
-            else:
-                output.append(text)
+            output.append(_parse_structured_output(text, structured_output) if structured_output else text)
     
     return output
 

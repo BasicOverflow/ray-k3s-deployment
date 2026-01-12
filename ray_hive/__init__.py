@@ -1,13 +1,13 @@
 """
-VRAM Scheduler - Dynamic VRAM-aware scheduling for Ray.
+Ray Hive - Distributed LLM serving engine for Ray clusters.
 
 This package provides:
-- VRAMScheduler: Main client for VRAM-aware LLM serving
+- RayHive: Main client for distributed LLM serving
 - Inference functions: Standalone inference functions
 - Core components: VRAMAllocator, VLLMModel, ModelOrchestrator
 """
 
-from .client import VRAMScheduler
+from .client import RayHive
 from .inference import (
     inference,
     a_inference,
@@ -20,7 +20,7 @@ from .shutdown import shutdown_all, shutdown_model
 
 __all__ = [
     # Main client
-    "VRAMScheduler",
+    "RayHive",
     # Inference functions
     "inference",
     "a_inference",

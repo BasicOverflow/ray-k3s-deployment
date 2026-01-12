@@ -1,7 +1,7 @@
 """vLLM Model Actor - one instance per GPU."""
 import ray
 from ray import serve
-from typing import Optional, Type, Union, List, Dict
+from typing import Optional, Type, Union, List
 from pydantic import BaseModel
 import json
 import time
@@ -114,6 +114,8 @@ class VLLMModel:
             available_memory_gb = gpu_info["available"]
             
             from vllm import LLM
+            import vllm
+            print(f"[{model_id}] vLLM version: {vllm.__version__}", flush=True)
             
             if hidden_dim is None or num_layers is None:
                 from transformers import AutoConfig
@@ -289,14 +291,25 @@ class VLLMModel:
             processed_prompts.append(truncated)
         
         # Extract sampling parameters from kwargs
-        sampling_params = SamplingParams(
-            max_tokens=kwargs.get("max_tokens", self.max_tokens),
-            temperature=kwargs.get("temperature", 1.0),
-            top_p=kwargs.get("top_p", 1.0),
-            top_k=kwargs.get("top_k", -1),
-            stop=kwargs.get("stop", None),
-            stop_token_ids=kwargs.get("stop_token_ids", None),
-        )
+        # Check for guided_json (vLLM 0.11+ uses structured_outputs)
+        guided_json = kwargs.pop("guided_json", None)
+        
+        sampling_kwargs = {
+            "max_tokens": kwargs.get("max_tokens", self.max_tokens),
+            "temperature": kwargs.get("temperature", 1.0),
+            "top_p": kwargs.get("top_p", 1.0),
+            "top_k": kwargs.get("top_k", -1),
+            "stop": kwargs.get("stop", None),
+            "stop_token_ids": kwargs.get("stop_token_ids", None),
+        }
+        
+        # Use structured_outputs API (vLLM 0.11+)
+        if guided_json is not None:
+            from vllm.sampling_params import StructuredOutputsParams
+            structured_outputs = StructuredOutputsParams(json=guided_json)
+            sampling_params = SamplingParams(**sampling_kwargs, structured_outputs=structured_outputs)
+        else:
+            sampling_params = SamplingParams(**sampling_kwargs)
         
         # Call vLLM generate with processed prompts
         # vLLM's generate expects: generate(prompts: List[str], sampling_params: SamplingParams)
@@ -323,27 +336,12 @@ class VLLMModel:
         return results
     
     def generate_with_schema(self, prompt: str, pydantic_class: Type[BaseModel], **kwargs):
-        """Generate structured output using Pydantic schema."""
-        schema_str = json.dumps(pydantic_class.model_json_schema(), indent=2)
-        enhanced_prompt = f"{prompt}\n\nRespond in valid JSON matching this schema:\n{schema_str}"
-        
-        result = self.generate(enhanced_prompt, **kwargs)
+        """Generate structured output using vLLM's native guided_json support."""
+        json_schema = pydantic_class.model_json_schema()
+        result = self.generate(prompt, guided_json=json_schema, **kwargs)
         text = result[0] if isinstance(result, list) and result else str(result)
-        
-        import re
-        json_match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
-        if json_match:
-            try:
-                parsed = json.loads(json_match.group(0))
-                return pydantic_class(**parsed)
-            except:
-                pass
-        
-        try:
-            parsed = json.loads(text)
-            return pydantic_class(**parsed)
-        except:
-            raise ValueError(f"Could not parse structured output from: {text}")
+        parsed = json.loads(text)
+        return pydantic_class(**parsed)
     
     def get_max_num_seqs(self) -> int:
         """Get the max_num_seqs value for this model instance."""

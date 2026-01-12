@@ -1,4 +1,4 @@
-"""OpenAI API compatibility layer for VRAM scheduler.
+"""OpenAI API compatibility layer for Ray Hive.
 
 TODO: Investigate Ray Serve response formats and OpenAI API compatibility
 - Check if Ray Serve can return OpenAI-compatible responses
@@ -17,7 +17,7 @@ TODO: Investigate Ray Serve response formats and OpenAI API compatibility
 # @app.post("/v1/chat/completions")
 # async def chat_completions(request: Dict[str, Any]):
 #     """OpenAI-compatible chat completions endpoint."""
-#     # Convert OpenAI format to VRAM scheduler format
+#     # Convert OpenAI format to Ray Hive format
 #     # Call inference function
 #     # Convert response back to OpenAI format
 #     pass
