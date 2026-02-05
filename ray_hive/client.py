@@ -33,7 +33,7 @@ class RayHive:
         max_output_prompt_length: int,
         max_num_seqs: int,
         max_num_batched_tokens: int,
-        replicas: Optional[int] = None,
+        replicas: Optional[Union[int, str]] = None,
         test_mode: bool = False,
         test_gpu: Optional[str] = None,
         gpu_utilization_target: float = 0.96,
@@ -47,6 +47,7 @@ class RayHive:
             max_output_prompt_length: Maximum output prompt length
             max_num_seqs: Maximum number of concurrent sequences
             max_num_batched_tokens: Maximum number of batched tokens
+            replicas: Number of replicas to deploy, 'max' to deploy to all available GPUs, or None to use all available GPUs
             test_gpu: When test_mode=True, specify GPU to deploy to (e.g., "ergos-06-nv:gpu0")
             gpu_utilization_target: GPU utilization target (default 0.96)
             swap_space_per_instance: Swap space per instance in GB, or 'max' to use all available CPU RAM divided evenly across GPUs

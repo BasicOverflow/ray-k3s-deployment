@@ -21,6 +21,8 @@ class StderrFilter:
             "rpc_client.h",
             "gcs_client.cc",
             "InvalidStateError: CANCELLED",
+            "InvalidStateError",
+            "concurrent.futures._base.InvalidStateError",
             "state=cancelled",
             "Callback error",
             "dataclient.py",

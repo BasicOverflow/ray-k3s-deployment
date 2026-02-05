@@ -181,7 +181,7 @@ Transient memory errors during initialization are expected when multiple replica
 
 ### RayHive
 
-- `deploy_model(model_id, model_name, vram_weights_gb, max_input_prompt_length, max_output_prompt_length, max_num_seqs, max_num_batched_tokens, replicas=None, test_mode=False, test_gpu=None, gpu_utilization_target=0.96, swap_space_per_instance=0, **vllm_kwargs)` - Deploy a model. `gpu_utilization_target` controls VRAM budget calculation (default 0.96) and can be overridden. `gpu_memory_utilization` can also be set via `vllm_kwargs` to override the value passed to vLLM.
+- `deploy_model(model_id, model_name, vram_weights_gb, max_input_prompt_length, max_output_prompt_length, max_num_seqs, max_num_batched_tokens, replicas=None, test_mode=False, test_gpu=None, gpu_utilization_target=0.96, swap_space_per_instance=0, **vllm_kwargs)` - Deploy a model. `replicas` can be an integer, `"max"` to deploy to all available GPUs, or `None` to use all available GPUs. `gpu_utilization_target` controls VRAM budget calculation (default 0.96) and can be overridden. `gpu_memory_utilization` can also be set via `vllm_kwargs` to override the value passed to vLLM.
 - `shutdown(model_id=None)` - Shutdown models (None = all)
 - `get_vram_state()` - Get VRAM state dict
 - `display_vram_state()` - Display VRAM state

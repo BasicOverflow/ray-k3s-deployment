@@ -162,31 +162,13 @@ class VLLMModel:
         activation_buffer_bytes = activation_per_token_bytes * max_num_batched_tokens
         activation_buffer_gb = activation_buffer_bytes / (1024**3)
         
-        # Use gpu_utilization_target for VRAM budget calculation
-        gpu_memory_utilization = vllm_kwargs.get("gpu_memory_utilization", self.gpu_utilization_target)
-        
-        # Calculate VRAM budget
-        vram_available = total_memory_gb * self.gpu_utilization_target
-        vram_kv_budget_gb = vram_available - required_vram_weights_gb - activation_buffer_gb
-        max_num_seqs_memory = max(1, int(vram_kv_budget_gb / kv_per_seq_gb))
-        
         swap_space_gb = float(self.swap_space) if self.swap_space > 0 else 0.0
         cpu_offloading_enabled = swap_space_gb > 0
         
         max_num_seqs = self.max_num_seqs
         
-        # Apply VRAM constraints and CPU offloading
-        if cpu_offloading_enabled:
-            active_seqs_gpu = max_num_seqs_memory
-            parked_seqs_cpu = int(swap_space_gb / kv_per_seq_gb)
-            total_concurrent_seqs = max_num_seqs
-        else:
-            active_seqs_gpu = None
-            parked_seqs_cpu = None
-            total_concurrent_seqs = None
-        
-        # Calculate total VRAM needed
-        kv_cache_total_gb = kv_per_seq_gb * (active_seqs_gpu if cpu_offloading_enabled else max_num_seqs)
+        # Calculate total VRAM needed for reservation
+        kv_cache_total_gb = kv_per_seq_gb * max_num_seqs
         total_needed_gb = required_vram_weights_gb + kv_cache_total_gb + activation_buffer_gb
         
         # Prepare vLLM init kwargs
@@ -197,9 +179,12 @@ class VLLMModel:
             "max_num_batched_tokens": max_num_batched_tokens,
             "swap_space": swap_space_gb if cpu_offloading_enabled else 0,
             "enable_chunked_prefill": True,
-            "gpu_memory_utilization": gpu_memory_utilization,
             "enforce_eager": True,
         }
+        
+        # Only set gpu_memory_utilization if explicitly provided in vllm_kwargs
+        if "gpu_memory_utilization" in vllm_kwargs:
+            vllm_init_kwargs["gpu_memory_utilization"] = vllm_kwargs["gpu_memory_utilization"]
         
         vllm_init_kwargs.update({k: v for k, v in vllm_kwargs.items() if k != "quantization"})
         
@@ -215,9 +200,9 @@ class VLLMModel:
             max_num_seqs=max_num_seqs,
             max_num_batched_tokens=max_num_batched_tokens,
             swap_space_gb=swap_space_gb if cpu_offloading_enabled else None,
-            active_seqs_gpu=active_seqs_gpu,
-            parked_seqs_cpu=parked_seqs_cpu,
-            total_concurrent_seqs=total_concurrent_seqs,
+            active_seqs_gpu=None,
+            parked_seqs_cpu=None,
+            total_concurrent_seqs=None,
             )
         
         self.llm = LLM(**vllm_init_kwargs)
@@ -306,6 +291,17 @@ class VLLMModel:
         if self.calculation_details is None:
             return None
         return asdict(self.calculation_details)
+    
+    def count_tokens(self, text: Union[str, List[str]]) -> int:
+        """Count tokens in text using tokenizer."""
+        if not hasattr(self, 'tokenizer') or self.tokenizer is None:
+            raise RuntimeError("Tokenizer not available")
+        
+        if isinstance(text, list):
+            text = " ".join(str(t) for t in text)
+        
+        tokens = self.tokenizer.encode(str(text), add_special_tokens=False)
+        return len(tokens)
     
     def get_capacity_info(self) -> Dict:
         """Get capacity information for routing decisions."""

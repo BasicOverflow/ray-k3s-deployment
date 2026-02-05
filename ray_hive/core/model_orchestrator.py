@@ -52,7 +52,12 @@ class ModelOrchestrator:
                 target_replicas = 1
             else:
                 requested_replicas = config.get("replicas")
-                target_replicas = min(requested_replicas, len(available_gpus)) if requested_replicas else len(available_gpus)
+                if isinstance(requested_replicas, str) and requested_replicas.lower() == 'max':
+                    target_replicas = len(available_gpus)
+                elif requested_replicas is None:
+                    target_replicas = len(available_gpus)
+                else:
+                    target_replicas = min(requested_replicas, len(available_gpus))
                         
             # Calculate swap_space_per_gpu if swap_space_per_instance is 'max'
             if isinstance(swap_space_per_instance, str) and swap_space_per_instance.lower() == 'max':

@@ -25,6 +25,9 @@ def shutdown_all():
         serve.shutdown()
     
     ray.get(allocator.clear_all_reservations.remote())
+    
+    # Wait for all processes to fully terminate
+    time.sleep(5.0)
 
 
 def shutdown_model(model_id: str):
@@ -48,4 +51,8 @@ def shutdown_model(model_id: str):
             pass
     
     ray.get(allocator.clear_reservations_by_prefix.remote(f"{model_id}-"))
+    
+    # Wait for processes to fully terminate and release GPU memory
+    # vLLM engine cleanup and CUDA context destruction can take time
+    time.sleep(3.0)
 
