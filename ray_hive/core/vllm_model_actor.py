@@ -186,7 +186,8 @@ class VLLMModel:
         if "gpu_memory_utilization" in vllm_kwargs:
             vllm_init_kwargs["gpu_memory_utilization"] = vllm_kwargs["gpu_memory_utilization"]
         
-        vllm_init_kwargs.update({k: v for k, v in vllm_kwargs.items() if k != "quantization"})
+        # Pass through all remaining vLLM kwargs
+        vllm_init_kwargs.update(vllm_kwargs)
         
         # Store calculation details
         self.calculation_details = DeploymentCalculation(
@@ -242,22 +243,18 @@ class VLLMModel:
         processed_prompts = prompts
         
         guided_json = kwargs.pop("guided_json", None)
-        sampling_kwargs = {
-            "max_tokens": kwargs.pop("max_tokens", self.max_tokens),
-            "temperature": kwargs.pop("temperature", 1.0),
-            "top_p": kwargs.pop("top_p", 1.0),
-            "top_k": kwargs.pop("top_k", -1),
-            "stop": kwargs.pop("stop", None),
-            "stop_token_ids": kwargs.pop("stop_token_ids", None),
-        }
+        
+        # Set default max_tokens if not provided
+        if "max_tokens" not in kwargs:
+            kwargs["max_tokens"] = self.max_tokens
         
         # Use structured_outputs API (vLLM 0.11+)
         if guided_json is not None:
             from vllm.sampling_params import StructuredOutputsParams
             structured_outputs = StructuredOutputsParams(json=guided_json)
-            sampling_params = SamplingParams(**sampling_kwargs, structured_outputs=structured_outputs)
+            sampling_params = SamplingParams(**kwargs, structured_outputs=structured_outputs)
         else:
-            sampling_params = SamplingParams(**sampling_kwargs)
+            sampling_params = SamplingParams(**kwargs)
         
         outputs = self.llm.generate(processed_prompts, sampling_params)
         

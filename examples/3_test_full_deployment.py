@@ -14,12 +14,12 @@ model_name = "Qwen/Qwen3-0.6B-GPTQ-Int8"
 vram_weights_gb = 0.763
 
 prompt = "Write a short poem about beer"
-amount = 300_000
+amount = 50_000
 prompts = [f"{prompt} {i}" for i in range(amount)]
 
 
 print("\n" + "=" * 80)
-print("Test 2: Deploy with 'max' replicas (all available GPUs)")
+print("Test: Deploy with 'max' replicas (all available GPUs)")
 print("=" * 80)
 
 scheduler.deploy_model(
@@ -35,11 +35,11 @@ scheduler.deploy_model(
 )
 
 
-_ = inference_batch(prompts[:10], model_id=MODEL_ID, max_tokens=50, temperature=0.0)
+_ = inference_batch(prompts[:10], model_id=MODEL_ID)
 time.sleep(2)
 
 start = time.time()
-results = inference_batch(prompts, model_id=MODEL_ID, max_tokens=50, temperature=0.0)
+results = inference_batch(prompts, model_id=MODEL_ID, temperature=0.7, top_k=50, top_p=0.9)
 elapsed = time.time() - start
 
 throughput = len(results) / elapsed

@@ -77,6 +77,7 @@ from ray_hive import RayHive
 scheduler = RayHive()
 
 # Deploy model with specific number of replicas
+# Any vLLM LLM() initialization kwargs can be passed via **vllm_kwargs
 scheduler.deploy_model(
     model_id="qwen",
     model_name="Qwen/Qwen3-0.6B-GPTQ-Int8",
@@ -138,6 +139,9 @@ result = inference(
     model_id="my-model",
     structured_output=Response
 )
+
+# Pass any vLLM SamplingParams kwargs (temperature, top_k, top_p, etc.)
+result = inference("Hello!", model_id="my-model", temperature=0.7, top_k=50)
 ```
 
 ## How It Works
@@ -180,19 +184,19 @@ Transient memory errors during initialization are expected when multiple replica
 
 ### RayHive
 
-- `deploy_model(model_id, model_name, vram_weights_gb, max_input_prompt_length, max_output_prompt_length, max_num_seqs, max_num_batched_tokens, replicas=None, gpu=None, gpu_utilization_target=0.96, swap_space_per_instance=0, **vllm_kwargs)` - Deploy a model. `replicas` can be an integer, `"max"` to deploy to all available GPUs, or `None` to use all available GPUs. `gpu` can be a string (single GPU), a list of strings (must match num_replicas length), or `None` to let library determine placement. `swap_space_per_instance` is the swap space per instance in GB. `gpu_utilization_target` controls VRAM budget calculation (default 0.96) and can be overridden. `gpu_memory_utilization` can also be set via `vllm_kwargs` to override the value passed to vLLM.
+- `deploy_model(model_id, model_name, vram_weights_gb, max_input_prompt_length, max_output_prompt_length, max_num_seqs, max_num_batched_tokens, replicas=None, gpu=None, gpu_utilization_target=0.96, swap_space_per_instance=0, **vllm_kwargs)` - Deploy a model. `replicas` can be an integer, `"max"` to deploy to all available GPUs, or `None` to use all available GPUs. `gpu` can be a string (single GPU), a list of strings (must match num_replicas length), or `None` to let library determine placement. `swap_space_per_instance` is the swap space per instance in GB. `gpu_utilization_target` controls VRAM budget calculation (default 0.96) and can be overridden. Any vLLM `LLM()` initialization kwargs can be passed via `**vllm_kwargs`.
 - `shutdown(model_id=None)` - Shutdown models (None = all)
 - `get_vram_state()` - Get VRAM state dict
 - `display_vram_state()` - Display VRAM state
 
 ### Inference Functions
 
-- `inference(prompt, model_id, structured_output=None, max_tokens=None, ...)` - Synchronous inference
-- `a_inference(prompt, model_id, ...)` - Async inference
-- `inference_batch(prompts, model_id, batch_size=None, ...)` - Batch inference
-- `a_inference_batch(prompts, model_id, batch_size=None, ...)` - Async batch inference
+- `inference(prompt, model_id, structured_output=None, max_tokens=None, **kwargs)` - Synchronous inference
+- `a_inference(prompt, model_id, structured_output=None, max_tokens=None, **kwargs)` - Async inference
+- `inference_batch(prompts, model_id, structured_output=None, max_tokens=None, **kwargs)` - Batch inference
+- `a_inference_batch(prompts, model_id, structured_output=None, max_tokens=None, **kwargs)` - Async batch inference
 
-All inference functions auto-discover deployments, support structured output (Pydantic), and accept vLLM sampling parameters.
+All inference functions auto-discover deployments, support structured output (Pydantic), and accept any vLLM `SamplingParams` kwargs via `**kwargs` (e.g., `temperature`, `top_k`, `top_p`, `presence_penalty`, etc.). These can be changed per-request without redeploying.
 
 
 ## Future Enhancements
